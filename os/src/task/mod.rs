@@ -16,6 +16,8 @@ mod task;
 
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -153,6 +155,29 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn mark_current_syscall(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[id] += 1;
+    }
+
+    fn mark_running_time(&self) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].time = get_time_ms() - inner.tasks[current].time;
+    }
+
+    fn get_current_task_info(&self) -> TaskInfo {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_task = &inner.tasks[current];
+        TaskInfo {
+            status: TaskStatus::Running,
+            syscall_times: current_task.syscall_times,
+            time: current_task.time,
+        }
+    }
 }
 
 /// Run the first task in task list.
@@ -201,4 +226,18 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// Mark syscall use times for current running task
+pub fn mark_current_syscall(id: usize) {
+    TASK_MANAGER.mark_current_syscall(id);
+}
+
+/// Mark running time for current running task
+pub fn mark_running_time() {
+    TASK_MANAGER.mark_running_time();
+}
+
+pub fn get_current_task_info() -> TaskInfo {
+    TASK_MANAGER.get_current_task_info()
 }
