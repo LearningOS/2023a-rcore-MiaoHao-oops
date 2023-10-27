@@ -439,7 +439,7 @@ bitflags! {
 
 impl From<usize> for MapPermission {
     fn from(value: usize) -> Self {
-        MapPermission { bits: (value & 0xf) as u8 }
+        MapPermission { bits: (((value & 0x7) << 1) | 0x10) as u8 }
     }
 }
 
