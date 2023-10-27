@@ -29,7 +29,7 @@ mod fs;
 mod process;
 
 use fs::*;
-pub use process::*;
+use process::*;
 
 use crate::task::{mark_current_syscall, mark_running_time};
 /// handle syscall exception with `syscall_id` and other arguments

@@ -20,11 +20,11 @@ pub struct TimeVal {
 #[allow(dead_code)]
 pub struct TaskInfo {
     /// Task status in it's life cycle
-    pub status: TaskStatus,
+    status: TaskStatus,
     /// The numbers of syscall called by task
-    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    syscall_times: [u32; MAX_SYSCALL_NUM],
     /// Total running time of task
-    pub time: usize,
+    time: usize,
 }
 
 /// task exits and submit an exit code
@@ -75,7 +75,11 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     );
     let _ti = kbuf[0].as_mut_ptr() as *mut TaskInfo;
     unsafe {
-        *_ti = get_current_task_info();
+        *_ti = TaskInfo {
+            status: TaskStatus::Running,
+            syscall_times: get_current_task_info().0,
+            time: get_current_task_info().1,
+        };
     }
     trace!("kernel: sys_task_info");
     0

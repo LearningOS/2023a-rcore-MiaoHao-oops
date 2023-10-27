@@ -14,9 +14,9 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
-use crate::syscall::TaskInfo;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -165,18 +165,14 @@ impl TaskManager {
     fn mark_running_time(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].time = get_time_ms() - inner.tasks[current].time;
+        inner.tasks[current].time = get_time_ms() - inner.tasks[current].begin_time;
     }
 
-    fn get_current_task_info(&self) -> TaskInfo {
+    fn get_current_task_info(&self) -> ([u32; MAX_SYSCALL_NUM], usize) {
         let inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let current_task = &inner.tasks[current];
-        TaskInfo {
-            status: TaskStatus::Running,
-            syscall_times: current_task.syscall_times,
-            time: current_task.time,
-        }
+        (current_task.syscall_times, current_task.time)
     }
 }
 
@@ -238,6 +234,7 @@ pub fn mark_running_time() {
     TASK_MANAGER.mark_running_time();
 }
 
-pub fn get_current_task_info() -> TaskInfo {
+/// Get current task info in a tuple
+pub fn get_current_task_info() -> ([u32; MAX_SYSCALL_NUM], usize) {
     TASK_MANAGER.get_current_task_info()
 }
