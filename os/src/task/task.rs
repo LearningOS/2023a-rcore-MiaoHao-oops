@@ -109,6 +109,29 @@ impl TaskControlBlock {
             None
         }
     }
+    /// insert a new area in a task's MemorySet
+    pub fn map_area(&mut self, start_va: usize, len: usize, port: usize) -> isize {
+        let end_va = start_va + len;
+        let start_va: VirtAddr = start_va.into();
+        let end_va: VirtAddr = end_va.into();
+        if !self.memory_set.is_varange_valid(start_va, end_va) {
+            let permission = MapPermission::from(port);
+            self.memory_set.insert_framed_area(
+                start_va,
+                end_va,
+                permission);
+            0
+        } else {
+            -1
+        }
+    }
+    /// delete an existed area in a task's MemorySet
+    pub fn unmap_area(&mut self, start_va: usize, len: usize) -> isize {
+        let end_va = start_va + len;
+        let start_va: VirtAddr = start_va.into();
+        let end_va: VirtAddr = end_va.into();
+        self.memory_set.delete_framed_area(start_va, end_va)
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]

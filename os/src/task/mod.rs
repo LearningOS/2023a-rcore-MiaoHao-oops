@@ -174,6 +174,20 @@ impl TaskManager {
         let current_task = &inner.tasks[current];
         (current_task.syscall_times, current_task.time)
     }
+
+    fn map_current_area(&self, start_va: usize, len: usize, port: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_task = &mut inner.tasks[current];
+        current_task.map_area(start_va, len, port)
+    }
+
+    fn unmap_current_area(&self, start_va: usize, len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_task = &mut inner.tasks[current];
+        current_task.unmap_area(start_va, len)
+    }
 }
 
 /// Run the first task in task list.
@@ -237,4 +251,20 @@ pub fn mark_running_time() {
 /// Get current task info in a tuple
 pub fn get_current_task_info() -> ([u32; MAX_SYSCALL_NUM], usize) {
     TASK_MANAGER.get_current_task_info()
+}
+
+/// Create a memory map for current task
+pub fn map_current_area(start_va: usize, len: usize, port: usize) -> isize {
+    if port & !0x7 != 0 || port & 0x7 == 0 || start_va & 0xfff != 0 {
+        return -1;
+    }
+    TASK_MANAGER.map_current_area(start_va, len, port)
+}
+
+/// Unmap a mamory area for current task
+pub fn unmap_current_area(start_va: usize, len: usize) -> isize {
+    if start_va & 0xfff != 0 {
+        return -1;
+    }
+    TASK_MANAGER.unmap_current_area(start_va, len)
 }
