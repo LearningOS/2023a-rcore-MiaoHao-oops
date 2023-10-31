@@ -276,3 +276,21 @@ impl Iterator for UserBufferIterator {
         }
     }
 }
+
+/// Write a ptr[u8](in virtual addr) with length len into dst
+pub fn copy_to_user(utoken: usize, kaddr: *const u8, uaddr: *const u8, len: usize) {
+    let page_table = PageTable::from_token(utoken);
+    let mut uva = uaddr as usize;
+    let mut kva = kaddr as usize;
+    for _ in 0..len {
+        let upa = page_table
+            .translate_va(VirtAddr::from(uva))
+            .unwrap()
+            .get_mut::<u8>();
+        unsafe {
+            *upa = *(kva as *mut u8);
+        }
+        uva += 1;
+        kva += 1;
+    }
+}

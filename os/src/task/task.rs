@@ -1,16 +1,23 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
+<<<<<<< HEAD
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+=======
+use crate::config::{TRAP_CONTEXT_BASE, MAX_SYSCALL_NUM};
+use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE, MapPermission};
+>>>>>>> 5960313 (update: finish spawn and set_prio, stride schedule algorithm in kernel)
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+const BIG_STRIDE: isize = 0x7fedca35;
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -71,6 +78,18 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Begin time
+    pub begin_time: usize,
+
+    /// System call times
+    pub syscall_time: [u32; MAX_SYSCALL_NUM],
+
+    /// Stride
+    pub stride: isize,
+
+    /// Prority
+    pub prio: isize,
 }
 
 impl TaskControlBlockInner {
@@ -93,6 +112,41 @@ impl TaskControlBlockInner {
             self.fd_table.push(None);
             self.fd_table.len() - 1
         }
+    }
+    /// insert a new area in a task's MemorySet
+    pub fn map_area(&mut self, start_va: usize, len: usize, port: usize) -> isize {
+        let end_va = start_va + len;
+        let start_va: VirtAddr = start_va.into();
+        let end_va: VirtAddr = end_va.into();
+        if !self.memory_set.is_varange_valid(start_va, end_va) {
+            let permission = MapPermission::from(port);
+            self.memory_set.insert_framed_area(
+                start_va,
+                end_va,
+                permission);
+            0
+        } else {
+            -1
+        }
+    }
+    /// delete an existed area in a task's MemorySet
+    pub fn unmap_area(&mut self, start_va: usize, len: usize) -> isize {
+        let end_va = start_va + len;
+        let start_va: VirtAddr = start_va.into();
+        let end_va: VirtAddr = end_va.into();
+        self.memory_set.delete_framed_area(start_va, end_va)
+    }
+    /// set priority
+    pub fn set_prio(&mut self, prio: isize) -> isize {
+        if prio <= 1 {
+            return -1;
+        }
+        self.prio = prio;
+        prio
+    }
+    /// update stride
+    pub fn update_stride(&mut self) {
+        self.stride += BIG_STRIDE / self.prio;
     }
 }
 
@@ -135,6 +189,10 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    begin_time: get_time_ms(),
+                    syscall_time: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    prio: 16,
                 })
             },
         };
@@ -216,6 +274,10 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    begin_time: get_time_ms(),
+                    syscall_time: [0; MAX_SYSCALL_NUM],
+                    stride: parent_inner.stride,
+                    prio: parent_inner.prio,
                 })
             },
         });
@@ -229,6 +291,61 @@ impl TaskControlBlock {
         task_control_block
         // **** release child PCB
         // ---- release parent PCB
+    }
+
+    /// parent process spawn the child process
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        // First, access parent PCB exclusively
+        let mut parent_inner = self.inner_exclusive_access();
+
+        // Second, create new mempry_set from elf_data and get trap context pnn
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+            .unwrap()
+            .ppn();
+
+        // Third, alloc a TCB, and init pid, kernel stack, and etc. for it
+        let pid_handle = pid_alloc();
+        let kernel_stack = kstack_alloc();
+        let kernel_stack_top = kernel_stack.get_top();
+        let task_control_block = Arc::new(TaskControlBlock {
+            pid: pid_handle,
+            kernel_stack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    trap_cx_ppn,
+                    base_size: parent_inner.base_size,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    task_status: TaskStatus::Ready,
+                    memory_set,
+                    parent: Some(Arc::downgrade(self)),
+                    children: Vec::new(),
+                    exit_code: 0,
+                    heap_bottom: parent_inner.heap_bottom,
+                    program_brk: parent_inner.program_brk,
+                    begin_time: get_time_ms(),
+                    syscall_time: [0; MAX_SYSCALL_NUM],
+                    stride: parent_inner.stride,
+                    prio: parent_inner.prio,
+                })
+            },
+        });
+
+        // Next, add new task as child of parent
+        parent_inner.children.push(task_control_block.clone());
+
+        // Finally, modify trap_cx, return to new entry_point
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as usize,
+        );
+
+        task_control_block
     }
 
     /// get pid of process
