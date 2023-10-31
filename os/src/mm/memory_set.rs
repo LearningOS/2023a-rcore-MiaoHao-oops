@@ -82,6 +82,65 @@ impl MemorySet {
         }
         self.areas.push(map_area);
     }
+    /// Delete and unmap a specified memory area
+    pub fn delete_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        match self.is_varange_exist_or_idx(start_va, end_va) {
+            Some(idx) => {
+                self.areas[idx].unmap(&mut self.page_table);
+                self.areas.remove(idx);
+                0
+            },
+            None => { -1 },
+        }
+    }
+
+    fn is_varange_valid_or_idx(&self, start_va: VirtAddr, end_va: VirtAddr) -> Option<usize> {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        if let Some(area) = self
+            .areas
+            .iter().enumerate()
+            .find(|(_, area)| {
+                let area_start_vpn = area.vpn_range.get_start();
+                let area_end_vpn = area.vpn_range.get_end();
+                !(end_vpn <= area_start_vpn ||
+                area_end_vpn <= start_vpn)
+            })
+        {
+            Some(area.0)
+        } else {
+            None
+        }
+    }
+
+    fn is_varange_exist_or_idx(&self, start_va: VirtAddr, end_va: VirtAddr) -> Option<usize> {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        if let Some(area) = self
+            .areas
+            .iter().enumerate()
+            .find(|(_, area)| {
+                let area_start_vpn = area.vpn_range.get_start();
+                let area_end_vpn = area.vpn_range.get_end();
+                start_vpn == area_start_vpn &&
+                end_vpn <= area_end_vpn
+            })
+        {
+            Some(area.0)
+        } else {
+            None
+        }
+    }
+
+    /// check if a va is invalid
+    #[allow(unused)]
+    pub fn is_varange_valid(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        match self.is_varange_valid_or_idx(start_va, end_va) {
+            Some(_) => true,
+            None => false,
+        }
+    }
+
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
         self.page_table.map(
@@ -420,6 +479,12 @@ bitflags! {
         const X = 1 << 3;
         ///Accessible in U mode
         const U = 1 << 4;
+    }
+}
+
+impl From<usize> for MapPermission {
+    fn from(value: usize) -> Self {
+        MapPermission { bits: (((value & 0x7) << 1) | 0x10) as u8 }
     }
 }
 
