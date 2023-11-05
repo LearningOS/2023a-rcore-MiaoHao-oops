@@ -152,6 +152,7 @@ impl TaskControlBlock {
     pub fn new(elf_data: &[u8]) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        println!("user sp: {:x}", user_sp);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
@@ -207,6 +208,7 @@ impl TaskControlBlock {
     pub fn exec(&self, elf_data: &[u8]) {
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        println!("user sp: {:x}", user_sp);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
@@ -295,6 +297,7 @@ impl TaskControlBlock {
 
         // Second, create new mempry_set from elf_data and get trap context pnn
         let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        println!("user sp: {:x}", user_sp);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
@@ -318,7 +321,7 @@ impl TaskControlBlock {
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
                     trap_cx_ppn,
-                    base_size: parent_inner.base_size,
+                    base_size: user_sp,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,
@@ -326,8 +329,8 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
-                    heap_bottom: parent_inner.heap_bottom,
-                    program_brk: parent_inner.program_brk,
+                    heap_bottom: user_sp,
+                    program_brk: user_sp,
                     begin_time: get_time_ms(),
                     syscall_time: [0; MAX_SYSCALL_NUM],
                     stride: parent_inner.stride,
